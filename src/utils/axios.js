@@ -8,7 +8,7 @@ const axiosInstance = axios.create({
     headers: {
         'Content-Type': 'application/json',
     },
-    withCredentials: false  // Set this to false to resolve the CORS issue
+    withCredentials: true  // Set this to false to resolve the CORS issue
 });
 
 // Add request interceptor
