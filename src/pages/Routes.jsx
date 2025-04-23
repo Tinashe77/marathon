@@ -28,6 +28,10 @@ export default function RoutesManagement() {
   });
   const fileInputRef = useRef(null);
   const [uploadLoading, setUploadLoading] = useState(false);
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setCurrentRoute(null);
+  };
 
   useEffect(() => {
     fetchRoutes();
@@ -36,125 +40,21 @@ export default function RoutesManagement() {
   const fetchRoutes = async () => {
     try {
       setLoading(true);
-      // In a real application, we would fetch from the API
-      // const response = await axios.get('/routes');
-      // setRoutes(response.data.data);
+      // Use the correct API endpoint from documentation
+      const response = await axios.get('/routes');
       
-      // Mock data for demonstration
-      const mockRoutes = [
-        {
-          _id: '1',
-          name: 'Victoria Falls Half Marathon',
-          description: 'Official half marathon route through the scenic Victoria Falls area',
-          category: 'Half Marathon',
-          distance: 21.0975,
-          isActive: true,
-          checkpoints: [
-            { 
-              name: 'Start',
-              location: { type: 'Point', coordinates: [25.8522, -17.9251] },
-              distanceFromStart: 0
-            },
-            { 
-              name: '5KM Mark',
-              location: { type: 'Point', coordinates: [25.8572, -17.9301] },
-              distanceFromStart: 5
-            },
-            { 
-              name: '10KM Mark',
-              location: { type: 'Point', coordinates: [25.8622, -17.9351] },
-              distanceFromStart: 10
-            },
-            { 
-              name: '15KM Mark',
-              location: { type: 'Point', coordinates: [25.8672, -17.9401] },
-              distanceFromStart: 15
-            },
-            { 
-              name: 'Finish',
-              location: { type: 'Point', coordinates: [25.8522, -17.9251] },
-              distanceFromStart: 21.0975
-            }
-          ],
-          gpxFile: 'route_1.gpx',
-          createdAt: '2023-04-10T08:00:00.000Z'
-        },
-        {
-          _id: '2',
-          name: 'Victoria Falls Full Marathon',
-          description: 'Official full marathon route through the scenic Victoria Falls area and surrounding wilderness',
-          category: 'Full Marathon',
-          distance: 42.195,
-          isActive: true,
-          checkpoints: [
-            { 
-              name: 'Start',
-              location: { type: 'Point', coordinates: [25.8522, -17.9251] },
-              distanceFromStart: 0
-            },
-            { 
-              name: '10KM Mark',
-              location: { type: 'Point', coordinates: [25.8622, -17.9351] },
-              distanceFromStart: 10
-            },
-            { 
-              name: '21KM Mark',
-              location: { type: 'Point', coordinates: [25.8722, -17.9451] },
-              distanceFromStart: 21
-            },
-            { 
-              name: '30KM Mark',
-              location: { type: 'Point', coordinates: [25.8822, -17.9551] },
-              distanceFromStart: 30
-            },
-            { 
-              name: '40KM Mark',
-              location: { type: 'Point', coordinates: [25.8922, -17.9651] },
-              distanceFromStart: 40
-            },
-            { 
-              name: 'Finish',
-              location: { type: 'Point', coordinates: [25.8522, -17.9251] },
-              distanceFromStart: 42.195
-            }
-          ],
-          gpxFile: 'route_2.gpx',
-          createdAt: '2023-04-10T09:00:00.000Z'
-        },
-        {
-          _id: '3',
-          name: 'Victoria Falls Fun Run',
-          description: 'A beginner-friendly 5K route perfect for all ages',
-          category: 'Fun Run',
-          distance: 5,
-          isActive: true,
-          checkpoints: [
-            { 
-              name: 'Start',
-              location: { type: 'Point', coordinates: [25.8522, -17.9251] },
-              distanceFromStart: 0
-            },
-            { 
-              name: '2.5KM Mark',
-              location: { type: 'Point', coordinates: [25.8572, -17.9301] },
-              distanceFromStart: 2.5
-            },
-            { 
-              name: 'Finish',
-              location: { type: 'Point', coordinates: [25.8522, -17.9251] },
-              distanceFromStart: 5
-            }
-          ],
-          gpxFile: 'route_3.gpx',
-          createdAt: '2023-04-10T10:00:00.000Z'
-        }
-      ];
-      
-      setRoutes(mockRoutes);
-      setError(null);
+      if (response.data && response.data.success) {
+        setRoutes(response.data.data || []);
+        setError(null);
+      } else {
+        throw new Error('Invalid API response format');
+      }
     } catch (err) {
       console.error('Error fetching routes:', err);
-      setError(err.response?.data?.message || 'Failed to fetch routes');
+      setError(err.response?.data?.error || 'Failed to fetch routes');
+      
+      // Set empty routes array on error
+      setRoutes([]);
     } finally {
       setLoading(false);
     }
@@ -165,7 +65,7 @@ export default function RoutesManagement() {
       setCurrentRoute(route);
       setFormData({
         name: route.name,
-        description: route.description,
+        description: route.description || '',
         category: route.category,
         distance: route.distance,
         isActive: route.isActive
@@ -180,12 +80,8 @@ export default function RoutesManagement() {
         isActive: false
       });
     }
+    setSelectedFile(null); // Reset the selected file
     setIsModalOpen(true);
-  };
-
-  const closeModal = () => {
-    setIsModalOpen(false);
-    setCurrentRoute(null);
   };
 
   const handleInputChange = (e) => {
@@ -196,40 +92,116 @@ export default function RoutesManagement() {
     });
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      setLoading(true);
-      
-      // In a real application, we would submit to the API
-      if (currentRoute) {
-        // Update existing route
-        // const response = await axios.put(`/routes/${currentRoute._id}`, formData);
-        // Update the routes array with the updated route
-        setRoutes(routes.map(route => 
-          route._id === currentRoute._id ? { ...route, ...formData } : route
-        ));
-      } else {
-        // Create new route
-        // const response = await axios.post('/routes', formData);
-        // Add the new route to the routes array
-        const newRoute = {
-          _id: `${routes.length + 1}`,
-          ...formData,
-          checkpoints: [],
-          createdAt: new Date().toISOString()
-        };
-        setRoutes([...routes, newRoute]);
-      }
-      
-      closeModal();
-    } catch (err) {
-      console.error('Error saving route:', err);
-      setError(err.response?.data?.message || 'Failed to save route');
-    } finally {
-      setLoading(false);
+  // Add a state for the selected file
+const [selectedFile, setSelectedFile] = useState(null);
+
+// Add a handler for file selection
+const handleFileChange = (e) => {
+  if (e.target.files.length > 0) {
+    const file = e.target.files[0];
+    if (!file.name.toLowerCase().endsWith('.gpx')) {
+      alert('Please select a GPX file');
+      e.target.value = '';
+      setSelectedFile(null);
+      return;
     }
-  };
+    setSelectedFile(file);
+  } else {
+    setSelectedFile(null);
+  }
+};
+
+// Update the form submission to handle file upload if a file is selected
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  try {
+    setLoading(true);
+    
+    // Create route data
+    const routeData = {
+      name: formData.name,
+      description: formData.description,
+      category: formData.category,
+      distance: parseFloat(formData.distance),
+      isActive: formData.isActive
+    };
+    
+    if (currentRoute) {
+      // Update existing route
+      const response = await axios.put(`/routes/${currentRoute._id}`, routeData);
+      
+      if (response.data && response.data.success) {
+        // After successful update, check if we need to upload a GPX file
+        if (selectedFile) {
+          await uploadFileForRoute(currentRoute._id, selectedFile);
+        } else {
+          setRoutes(routes.map(route => 
+            route._id === currentRoute._id ? response.data.data : route
+          ));
+        }
+        setError(null);
+      } else {
+        throw new Error('Invalid API response format');
+      }
+    } else {
+      // Create new route
+      const response = await axios.post('/routes', routeData);
+      
+      if (response.data && response.data.success) {
+        const newRouteId = response.data.data._id;
+        
+        // After successful creation, check if we need to upload a GPX file
+        if (selectedFile) {
+          await uploadFileForRoute(newRouteId, selectedFile);
+        } else {
+          setRoutes([...routes, response.data.data]);
+        }
+        setError(null);
+      } else {
+        throw new Error('Invalid API response format');
+      }
+    }
+    
+    closeModal();
+  } catch (err) {
+    console.error('Error saving route:', err);
+    if (err.response) {
+      console.error('Error response:', err.response.data);
+      console.error('Status code:', err.response.status);
+    }
+    setError(err.response?.data?.error || 'Failed to save route');
+  } finally {
+    setLoading(false);
+  }
+};
+
+// Create a reusable function for uploading a file to a specific route
+const uploadFileForRoute = async (routeId, file) => {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const response = await axios.put(`/routes/${routeId}/upload`, formData, {
+      headers: {} // Let axios set the content type
+    });
+    
+    if (response.data && response.data.success) {
+      // Update the routes array with the updated route that includes checkpoints
+      setRoutes(routes.map(route => {
+        if (route._id === routeId) {
+          return response.data.data;
+        }
+        return route;
+      }));
+      return true;
+    } else {
+      throw new Error('Invalid API response format');
+    }
+  } catch (err) {
+    console.error('Error uploading GPX file:', err);
+    throw err; // Re-throw to handle in the calling function
+  }
+};
 
   const handleActivate = async (routeId, isActive) => {
     try {
@@ -262,61 +234,60 @@ export default function RoutesManagement() {
   };
 
   const handleFileUpload = async (routeId) => {
-    if (!fileInputRef.current.files[0]) {
+    if (!fileInputRef.current || !fileInputRef.current.files[0]) {
       alert('Please select a GPX file to upload');
+      return;
+    }
+    
+    const file = fileInputRef.current.files[0];
+    
+    // Validate file type - ensure it's a .gpx file
+    if (!file.name.toLowerCase().endsWith('.gpx')) {
+      alert('Please select a GPX file');
       return;
     }
     
     try {
       setUploadLoading(true);
       
-      // In a real application, we would upload the file to the API
-      // const formData = new FormData();
-      // formData.append('file', fileInputRef.current.files[0]);
-      // const response = await axios.put(`/routes/${routeId}/upload`, formData, {
-      //   headers: {
-      //     'Content-Type': 'multipart/form-data'
-      //   }
-      // });
+      const formData = new FormData();
+      formData.append('file', file);
       
-      // Mock successful upload
-      setTimeout(() => {
-        // Update the routes array with updated checkpoints
+      console.log('Uploading file:', file.name, 'size:', file.size);
+      
+      const response = await axios.put(`/routes/${routeId}/upload`, formData, {
+        headers: {
+          // Let axios set the content type with boundary
+        }
+      });
+      
+      console.log('Upload response:', response.data);
+      
+      if (response.data && response.data.success) {
+        // Update the routes array with the updated route data
         setRoutes(routes.map(route => {
           if (route._id === routeId) {
-            return {
-              ...route,
-              gpxFile: `route_${routeId}_${Date.now()}.gpx`,
-              // Add mock checkpoints if none exist
-              checkpoints: route.checkpoints.length ? route.checkpoints : [
-                { 
-                  name: 'Start',
-                  location: { type: 'Point', coordinates: [25.8522, -17.9251] },
-                  distanceFromStart: 0
-                },
-                { 
-                  name: 'Checkpoint 1',
-                  location: { type: 'Point', coordinates: [25.8572, -17.9301] },
-                  distanceFromStart: route.distance / 2
-                },
-                { 
-                  name: 'Finish',
-                  location: { type: 'Point', coordinates: [25.8522, -17.9251] },
-                  distanceFromStart: route.distance
-                }
-              ]
-            };
+            return response.data.data;
           }
           return route;
         }));
-        setUploadLoading(false);
+        
         alert('GPX file uploaded successfully!');
         fileInputRef.current.value = '';
-      }, 1500);
-      
+        setError(null);
+      } else {
+        throw new Error('Invalid API response format');
+      }
     } catch (err) {
       console.error('Error uploading GPX file:', err);
-      setError(err.response?.data?.message || 'Failed to upload GPX file');
+      if (err.response) {
+        console.error('Error response:', err.response.data);
+        console.error('Status code:', err.response.status);
+      }
+      
+      setError(err.response?.data?.error || 'Failed to upload GPX file');
+      alert('Failed to upload GPX file: ' + (err.response?.data?.error || err.message));
+    } finally {
       setUploadLoading(false);
     }
   };
@@ -408,6 +379,26 @@ export default function RoutesManagement() {
                       <label htmlFor="isActive" className="ml-2 block text-sm text-gray-900">
                         Active Route
                       </label>
+                    </div>
+                    
+                    {/* GPX File Upload */}
+                    <div>
+                      <label htmlFor="gpxFile" className="block text-sm font-medium text-gray-700">
+                        GPX File (Optional)
+                      </label>
+                      <div className="mt-1">
+                        <input
+                          type="file"
+                          id="gpxFile"
+                          name="gpxFile"
+                          accept=".gpx"
+                          onChange={handleFileChange}
+                          className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100"
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Upload a GPX file to automatically add checkpoints and calculate accurate distance
+                      </p>
                     </div>
                   </div>
                 </div>
