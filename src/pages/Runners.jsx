@@ -7,11 +7,11 @@ import {
   ArrowDownTrayIcon,
   MagnifyingGlassIcon,
   AdjustmentsHorizontalIcon,
-  MapPinIcon,
+  MapPinIcon
 } from '@heroicons/react/24/outline';
 import Loading from '../components/Loading';
 import Error from '../components/Error';
-import { listenToRunnerLocation } from '../utils/socket';
+import { listenToRunnerLocation, removeListeners } from '../utils/socket';
 
 export default function Runners() {
   const [runners, setRunners] = useState([]);
@@ -36,8 +36,8 @@ export default function Runners() {
     // Listen for real-time runner location updates
     listenToRunnerLocation(updateRunnerLocation);
     
+    // Clean up listeners when component unmounts
     return () => {
-      // Clean up listeners when component unmounts
       removeListeners();
     };
   }, [pagination.page, filters]);
@@ -73,41 +73,24 @@ export default function Runners() {
       // Fetch runners from the API endpoint
       const response = await axios.get(`/runners${query}`);
       
-      // Use the actual API response
-      setRunners(response.data.data);
-      setPagination({
-        ...pagination,
-        total: response.data.count,
-        totalPages: Math.ceil(response.data.count / pagination.limit)
-      });
-      
-      setError(null);
+      if (response.data?.success) {
+        setRunners(response.data.data);
+        
+        // Set pagination data from API response
+        setPagination({
+          ...pagination,
+          total: response.data.count || 0,
+          totalPages: Math.ceil((response.data.count || 0) / pagination.limit)
+        });
+        
+        setError(null);
+      } else {
+        throw new Error(response.data?.error || 'Invalid response format');
+      }
     } catch (err) {
       console.error('Error fetching runners:', err);
-      setError(err.response?.data?.message || 'Failed to fetch runners');
-      
-      // For development purposes, fall back to mock data if API fails
-      const mockRunners = Array.from({ length: 10 }, (_, i) => ({
-        _id: `runner-${i + 1 + (pagination.page - 1) * 10}`,
-        runnerNumber: `ECO${2023 + i}`,
-        name: `Runner ${i + 1 + (pagination.page - 1) * 10}`,
-        email: `runner${i + 1 + (pagination.page - 1) * 10}@example.com`,
-        phone: `+2637843874${i + 10}`,
-        registeredCategories: i % 3 === 0 ? ['Half Marathon'] : i % 3 === 1 ? ['Full Marathon'] : ['Fun Run'],
-        status: i % 4 === 0 ? 'registered' : i % 4 === 1 ? 'active' : i % 4 === 2 ? 'completed' : 'inactive',
-        lastKnownLocation: i % 2 === 0 ? {
-          type: 'Point',
-          coordinates: [25.8526 + (i * 0.001), -17.9257 - (i * 0.001)]
-        } : null,
-        createdAt: new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString()
-      }));
-      
-      setRunners(mockRunners);
-      setPagination({
-        ...pagination,
-        total: 248,
-        totalPages: 25
-      });
+      setError(err.response?.data?.message || err.message || 'Failed to fetch runners');
+      setRunners([]);
     } finally {
       setLoading(false);
     }
@@ -125,16 +108,16 @@ export default function Runners() {
 
   const handleSearch = (e) => {
     e.preventDefault();
-    // The search will be triggered by the useEffect as filters change
+    fetchRunners(); // Explicitly fetch when form is submitted
   };
 
   const exportRunners = async () => {
     try {
       setExportLoading(true);
       
-      // Using the specified endpoint for exporting runners
+      // Use the specified endpoint for exporting runners
       const response = await axios.get('/runners/export', {
-        responseType: 'blob' // Important to handle file download
+        responseType: 'blob' // Important for file download
       });
       
       // Create a download link for the CSV file
@@ -145,15 +128,11 @@ export default function Runners() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      
-      setExportLoading(false);
     } catch (err) {
       console.error('Error exporting runners:', err);
-      setError('Failed to export runners');
+      setError(err.response?.data?.error || err.message || 'Failed to export runners');
+    } finally {
       setExportLoading(false);
-      
-      // Fallback for testing purposes
-      alert('Export functionality would download a CSV file from the /runners/export endpoint');
     }
   };
 
@@ -165,17 +144,21 @@ export default function Runners() {
       }
       
       // Use the API endpoint to update runner status
-      await axios.put(`/runners/${runnerId}`, data);
+      const response = await axios.put(`/runners/${runnerId}`, data);
       
-      // Update the runner in the local state
-      setRunners(prevRunners => 
-        prevRunners.map(runner => 
-          runner._id === runnerId ? { ...runner, status, ...(location && { lastKnownLocation: location }) } : runner
-        )
-      );
+      if (response.data?.success) {
+        // Update the runner in the local state
+        setRunners(prevRunners => 
+          prevRunners.map(runner => 
+            runner._id === runnerId ? { ...runner, status, ...(location && { lastKnownLocation: location }) } : runner
+          )
+        );
+      } else {
+        throw new Error(response.data?.error || 'Failed to update runner status');
+      }
     } catch (err) {
       console.error('Error updating runner status:', err);
-      setError(err.response?.data?.message || 'Failed to update runner status');
+      setError(err.response?.data?.message || err.message || 'Failed to update runner status');
     }
   };
 
@@ -194,8 +177,154 @@ export default function Runners() {
     }
   };
 
+  const viewRunnerDetails = async (runnerId) => {
+    try {
+      const response = await axios.get(`/runners/${runnerId}`);
+      
+      if (response.data?.success) {
+        const runnerData = response.data.data;
+        
+        // Open a new window with runner details and map
+        const detailWindow = window.open('', '_blank');
+        detailWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Runner: ${runnerData.name}</title>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css" />
+            <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+              .container { max-width: 1000px; margin: 0 auto; }
+              .header { margin-bottom: 20px; }
+              .header h1 { color: #0891b2; margin-bottom: 5px; }
+              .details { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
+              .info-section { margin-bottom: 30px; }
+              .info-item { margin-bottom: 10px; }
+              .info-label { font-weight: bold; color: #4b5563; }
+              .badge {
+                display: inline-block;
+                padding: 2px 8px;
+                border-radius: 9999px;
+                font-size: 12px;
+                font-weight: 600;
+                margin-right: 4px;
+              }
+              .badge-blue { background-color: #dbeafe; color: #1e40af; }
+              .badge-green { background-color: #d1fae5; color: #065f46; }
+              .badge-purple { background-color: #ede9fe; color: #5b21b6; }
+              .badge-gray { background-color: #f3f4f6; color: #1f2937; }
+              #map { height: 400px; border-radius: 8px; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>${runnerData.name}</h1>
+                <div>Runner #${runnerData.runnerNumber}</div>
+              </div>
+              
+              <div class="details">
+                <div class="info-section">
+                  <div class="info-item">
+                    <div class="info-label">Status</div>
+                    <div>
+                      <span class="badge ${
+                        runnerData.status === 'active' ? 'badge-green' : 
+                        runnerData.status === 'registered' ? 'badge-blue' : 
+                        runnerData.status === 'completed' ? 'badge-purple' : 'badge-gray'
+                      }">
+                        ${runnerData.status.charAt(0).toUpperCase() + runnerData.status.slice(1)}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div class="info-item">
+                    <div class="info-label">Categories</div>
+                    <div>
+                      ${runnerData.registeredCategories?.map(cat => 
+                        `<span class="badge badge-blue">${cat}</span>`
+                      ).join(' ') || 'None'}
+                    </div>
+                  </div>
+                  
+                  <div class="info-item">
+                    <div class="info-label">Email</div>
+                    <div>${runnerData.email || 'Not provided'}</div>
+                  </div>
+                  
+                  <div class="info-item">
+                    <div class="info-label">Phone</div>
+                    <div>${runnerData.phone || 'Not provided'}</div>
+                  </div>
+                  
+                  <div class="info-item">
+                    <div class="info-label">Registered On</div>
+                    <div>${new Date(runnerData.createdAt).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}</div>
+                  </div>
+                  
+                  ${runnerData.lastKnownLocation ? `
+                    <div class="info-item">
+                      <div class="info-label">Last Known Location</div>
+                      <div>
+                        Latitude: ${runnerData.lastKnownLocation.coordinates[1].toFixed(6)}, 
+                        Longitude: ${runnerData.lastKnownLocation.coordinates[0].toFixed(6)}
+                      </div>
+                    </div>
+                  ` : ''}
+                </div>
+                
+                <div class="map-section">
+                  <h2>Location Map</h2>
+                  <div id="map"></div>
+                </div>
+              </div>
+            </div>
+            
+            <script>
+              // Initialize map if location data exists
+              ${runnerData.lastKnownLocation ? `
+                const map = L.map('map').setView([
+                  ${runnerData.lastKnownLocation.coordinates[1]}, 
+                  ${runnerData.lastKnownLocation.coordinates[0]}
+                ], 14);
+                
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(map);
+                
+                // Add marker for runner location
+                L.marker([
+                  ${runnerData.lastKnownLocation.coordinates[1]}, 
+                  ${runnerData.lastKnownLocation.coordinates[0]}
+                ]).addTo(map)
+                  .bindPopup("${runnerData.name} (${runnerData.runnerNumber})")
+                  .openPopup();
+              ` : `
+                document.getElementById('map').innerHTML = '<div style="height: 100%; display: flex; justify-content: center; align-items: center; background-color: #f3f4f6;"><p>No location data available</p></div>';
+              `}
+            </script>
+          </body>
+          </html>
+        `);
+        detailWindow.document.close();
+      } else {
+        throw new Error(response.data?.error || 'Failed to fetch runner details');
+      }
+    } catch (err) {
+      console.error('Error fetching runner details:', err);
+      alert('Failed to fetch runner details: ' + (err.message || 'Unknown error'));
+    }
+  };
+
   if (loading && pagination.page === 1) return <Loading />;
-  if (error) return <Error message={error} />;
+  if (error) return <Error message={error} onRetry={fetchRunners} />;
 
   return (
     <div className="space-y-6">
@@ -338,7 +467,7 @@ export default function Runners() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {loading && pagination.page === 1 ? (
+              {loading ? (
                 <tr>
                   <td colSpan="6" className="px-6 py-4 text-center">
                     <Loading />
@@ -364,7 +493,7 @@ export default function Runners() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="space-y-1">
-                        {runner.registeredCategories.map((category) => (
+                        {runner.registeredCategories?.map((category) => (
                           <span
                             key={category}
                             className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
@@ -405,42 +534,13 @@ export default function Runners() {
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button
                         className="text-primary-600 hover:text-primary-900 mr-3"
-                        onClick={() => {
-                          const runnerDetail = window.open('', '_blank');
-                          runnerDetail.document.write(`
-                            <html>
-                              <head>
-                                <title>Runner Details: ${runner.name}</title>
-                                <style>
-                                  body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; }
-                                  h1 { color: #0891b2; }
-                                  .info { margin-bottom: 10px; }
-                                  .label { font-weight: bold; }
-                                </style>
-                              </head>
-                              <body>
-                                <h1>Runner Details</h1>
-                                <div class="info"><span class="label">Name:</span> ${runner.name}</div>
-                                <div class="info"><span class="label">Runner Number:</span> ${runner.runnerNumber}</div>
-                                <div class="info"><span class="label">Email:</span> ${runner.email}</div>
-                                <div class="info"><span class="label">Phone:</span> ${runner.phone}</div>
-                                <div class="info"><span class="label">Categories:</span> ${runner.registeredCategories.join(', ')}</div>
-                                <div class="info"><span class="label">Status:</span> ${runner.status}</div>
-                                <div class="info"><span class="label">Registered:</span> ${new Date(runner.createdAt).toLocaleString()}</div>
-                                ${runner.lastKnownLocation ? 
-                                  `<div class="info"><span class="label">Last Location:</span> ${runner.lastKnownLocation.coordinates[1].toFixed(4)}, ${runner.lastKnownLocation.coordinates[0].toFixed(4)}</div>` : 
-                                  ''}
-                              </body>
-                            </html>
-                          `);
-                        }}
+                        onClick={() => viewRunnerDetails(runner._id)}
                       >
                         View
                       </button>
                       <button
                         className="text-primary-600 hover:text-primary-900"
                         onClick={() => {
-                          // Simulate status change
                           const newStatus = runner.status === 'active' ? 'completed' : 'active';
                           updateRunnerStatus(runner._id, newStatus);
                         }}
